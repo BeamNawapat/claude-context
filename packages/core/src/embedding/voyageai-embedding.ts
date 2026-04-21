@@ -1,13 +1,21 @@
 import { VoyageAIClient } from 'voyageai';
+import OpenAI from 'openai';
 import { Embedding, EmbeddingVector } from './base-embedding';
 
 export interface VoyageAIEmbeddingConfig {
     model: string;
     apiKey: string;
+    baseURL?: string;
 }
 
 export class VoyageAIEmbedding extends Embedding {
-    private client: VoyageAIClient;
+    // When baseURL is set (e.g., MongoDB Atlas ai.mongodb.com/v1), we use the OpenAI SDK
+    // instead of the native VoyageAI SDK. This is because MongoDB's VoyageAI endpoint
+    // only accepts OpenAI-compatible request format (different field naming from the
+    // native VoyageAI API), even though both return the same embeddings.
+    private client: VoyageAIClient | null = null;
+    private openaiClient: OpenAI | null = null;
+    private useOpenAICompat: boolean;
     private config: VoyageAIEmbeddingConfig;
     private dimension: number = 1024; // Default dimension for voyage-code-3
     private inputType: 'document' | 'query' = 'document';
@@ -16,9 +24,18 @@ export class VoyageAIEmbedding extends Embedding {
     constructor(config: VoyageAIEmbeddingConfig) {
         super();
         this.config = config;
-        this.client = new VoyageAIClient({
-            apiKey: config.apiKey,
-        });
+        this.useOpenAICompat = !!config.baseURL;
+
+        if (this.useOpenAICompat) {
+            this.openaiClient = new OpenAI({
+                apiKey: config.apiKey,
+                baseURL: config.baseURL,
+            });
+        } else {
+            this.client = new VoyageAIClient({
+                apiKey: config.apiKey,
+            });
+        }
 
         // Set dimension and context length based on different models
         this.updateModelSettings(config.model || 'voyage-code-3');
@@ -70,7 +87,15 @@ export class VoyageAIEmbedding extends Embedding {
         const processedText = this.preprocessText(text);
         const model = this.config.model || 'voyage-code-3';
 
-        const response = await this.client.embed({
+        if (this.useOpenAICompat && this.openaiClient) {
+            // MongoDB endpoint uses OpenAI-compatible format with VoyageAI-specific input_type
+            const body: Record<string, unknown> = { model, input: processedText, input_type: this.inputType };
+            const response = await this.openaiClient.embeddings.create(body as any);
+            this.dimension = response.data[0].embedding.length;
+            return { vector: response.data[0].embedding, dimension: this.dimension };
+        }
+
+        const response = await this.client!.embed({
             input: processedText,
             model: model,
             inputType: this.inputType,
@@ -90,7 +115,17 @@ export class VoyageAIEmbedding extends Embedding {
         const processedTexts = this.preprocessTexts(texts);
         const model = this.config.model || 'voyage-code-3';
 
-        const response = await this.client.embed({
+        if (this.useOpenAICompat && this.openaiClient) {
+            const body: Record<string, unknown> = { model, input: processedTexts, input_type: this.inputType };
+            const response = await this.openaiClient.embeddings.create(body as any);
+            this.dimension = response.data[0].embedding.length;
+            return response.data.map((item) => ({
+                vector: item.embedding,
+                dimension: this.dimension
+            }));
+        }
+
+        const response = await this.client!.embed({
             input: processedTexts,
             model: model,
             inputType: this.inputType,
@@ -137,10 +172,18 @@ export class VoyageAIEmbedding extends Embedding {
     }
 
     /**
-     * Get client instance (for advanced usage)
+     * Get the native VoyageAI client instance (for advanced usage).
+     * Returns null when using OpenAI-compatible mode (baseURL is set).
      */
-    getClient(): VoyageAIClient {
+    getClient(): VoyageAIClient | null {
         return this.client;
+    }
+
+    /**
+     * Check if using OpenAI-compatible mode (e.g., MongoDB Atlas endpoint).
+     */
+    isOpenAICompatMode(): boolean {
+        return this.useOpenAICompat;
     }
 
     /**

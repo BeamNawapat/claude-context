@@ -10,6 +10,7 @@ export interface ContextMcpConfig {
     openaiApiKey?: string;
     openaiBaseUrl?: string;
     voyageaiApiKey?: string;
+    voyageaiBaseUrl?: string;
     geminiApiKey?: string;
     geminiBaseUrl?: string;
     // Ollama configuration
@@ -110,6 +111,7 @@ export function createMcpConfig(): ContextMcpConfig {
     console.log(`[DEBUG]   OLLAMA_MODEL: ${envManager.get('OLLAMA_MODEL') || 'NOT SET'}`);
     console.log(`[DEBUG]   GEMINI_API_KEY: ${envManager.get('GEMINI_API_KEY') ? 'SET (length: ' + envManager.get('GEMINI_API_KEY')!.length + ')' : 'NOT SET'}`);
     console.log(`[DEBUG]   OPENAI_API_KEY: ${envManager.get('OPENAI_API_KEY') ? 'SET (length: ' + envManager.get('OPENAI_API_KEY')!.length + ')' : 'NOT SET'}`);
+    console.log(`[DEBUG]   VOYAGEAI_BASE_URL: ${envManager.get('VOYAGEAI_BASE_URL') || 'NOT SET'}`);
     console.log(`[DEBUG]   MILVUS_ADDRESS: ${envManager.get('MILVUS_ADDRESS') || 'NOT SET'}`);
     console.log(`[DEBUG]   NODE_ENV: ${envManager.get('NODE_ENV') || 'NOT SET'}`);
 
@@ -123,6 +125,7 @@ export function createMcpConfig(): ContextMcpConfig {
         openaiApiKey: envManager.get('OPENAI_API_KEY'),
         openaiBaseUrl: envManager.get('OPENAI_BASE_URL'),
         voyageaiApiKey: envManager.get('VOYAGEAI_API_KEY'),
+        voyageaiBaseUrl: envManager.get('VOYAGEAI_BASE_URL'),
         geminiApiKey: envManager.get('GEMINI_API_KEY'),
         geminiBaseUrl: envManager.get('GEMINI_BASE_URL'),
         // Ollama configuration
@@ -155,6 +158,9 @@ export function logConfigurationSummary(config: ContextMcpConfig): void {
             break;
         case 'VoyageAI':
             console.log(`[MCP]   VoyageAI API Key: ${config.voyageaiApiKey ? '✅ Configured' : '❌ Missing'}`);
+            if (config.voyageaiBaseUrl) {
+                console.log(`[MCP]   VoyageAI Base URL: ${config.voyageaiBaseUrl}`);
+            }
             break;
         case 'Gemini':
             console.log(`[MCP]   Gemini API Key: ${config.geminiApiKey ? '✅ Configured' : '❌ Missing'}`);
@@ -192,6 +198,7 @@ Environment Variables:
   OPENAI_API_KEY          OpenAI API key (required for OpenAI provider)
   OPENAI_BASE_URL         OpenAI API base URL (optional, for custom endpoints)
   VOYAGEAI_API_KEY        VoyageAI API key (required for VoyageAI provider)
+  VOYAGEAI_BASE_URL       VoyageAI API base URL (optional, for custom endpoints)
   GEMINI_API_KEY          Google AI API key (required for Gemini provider)
   GEMINI_BASE_URL         Gemini API base URL (optional, for custom endpoints)
   
