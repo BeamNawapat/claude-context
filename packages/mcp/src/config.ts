@@ -4,20 +4,26 @@ export interface ContextMcpConfig {
     name: string;
     version: string;
     // Embedding provider configuration
-    embeddingProvider: 'OpenAI' | 'VoyageAI' | 'Gemini' | 'Ollama';
+    embeddingProvider: 'OpenAI' | 'VoyageAI' | 'Gemini' | 'Ollama' | 'OpenRouter';
     embeddingModel: string;
     // Provider-specific API keys
     openaiApiKey?: string;
     openaiBaseUrl?: string;
     voyageaiApiKey?: string;
+    voyageaiBaseUrl?: string;
     geminiApiKey?: string;
     geminiBaseUrl?: string;
+    // OpenRouter configuration
+    openrouterApiKey?: string;
     // Ollama configuration
     ollamaModel?: string;
     ollamaHost?: string;
     // Vector database configuration
+    vectordbProvider: 'milvus' | 'qdrant';
     milvusAddress?: string; // Optional, can be auto-resolved from token
     milvusToken?: string;
+    qdrantUrl?: string;
+    qdrantApiKey?: string;
 }
 
 // Legacy format (v1) - for backward compatibility
@@ -76,6 +82,8 @@ export function getDefaultModelForProvider(provider: string): string {
             return 'voyage-code-3';
         case 'Gemini':
             return 'gemini-embedding-001';
+        case 'OpenRouter':
+            return 'openai/text-embedding-3-small';
         case 'Ollama':
             return 'nomic-embed-text';
         default:
@@ -94,6 +102,7 @@ export function getEmbeddingModelForProvider(provider: string): string {
         case 'OpenAI':
         case 'VoyageAI':
         case 'Gemini':
+        case 'OpenRouter':
         default:
             // For all other providers, use EMBEDDING_MODEL or default
             const selectedModel = envManager.get('EMBEDDING_MODEL') || getDefaultModelForProvider(provider);
@@ -110,6 +119,7 @@ export function createMcpConfig(): ContextMcpConfig {
     console.log(`[DEBUG]   OLLAMA_MODEL: ${envManager.get('OLLAMA_MODEL') || 'NOT SET'}`);
     console.log(`[DEBUG]   GEMINI_API_KEY: ${envManager.get('GEMINI_API_KEY') ? 'SET (length: ' + envManager.get('GEMINI_API_KEY')!.length + ')' : 'NOT SET'}`);
     console.log(`[DEBUG]   OPENAI_API_KEY: ${envManager.get('OPENAI_API_KEY') ? 'SET (length: ' + envManager.get('OPENAI_API_KEY')!.length + ')' : 'NOT SET'}`);
+    console.log(`[DEBUG]   VOYAGEAI_BASE_URL: ${envManager.get('VOYAGEAI_BASE_URL') || 'NOT SET'}`);
     console.log(`[DEBUG]   MILVUS_ADDRESS: ${envManager.get('MILVUS_ADDRESS') || 'NOT SET'}`);
     console.log(`[DEBUG]   NODE_ENV: ${envManager.get('NODE_ENV') || 'NOT SET'}`);
 
@@ -117,20 +127,26 @@ export function createMcpConfig(): ContextMcpConfig {
         name: envManager.get('MCP_SERVER_NAME') || "Context MCP Server",
         version: envManager.get('MCP_SERVER_VERSION') || "1.0.0",
         // Embedding provider configuration
-        embeddingProvider: (envManager.get('EMBEDDING_PROVIDER') as 'OpenAI' | 'VoyageAI' | 'Gemini' | 'Ollama') || 'OpenAI',
+        embeddingProvider: (envManager.get('EMBEDDING_PROVIDER') as 'OpenAI' | 'VoyageAI' | 'Gemini' | 'Ollama' | 'OpenRouter') || 'OpenAI',
         embeddingModel: getEmbeddingModelForProvider(envManager.get('EMBEDDING_PROVIDER') || 'OpenAI'),
         // Provider-specific API keys
         openaiApiKey: envManager.get('OPENAI_API_KEY'),
         openaiBaseUrl: envManager.get('OPENAI_BASE_URL'),
         voyageaiApiKey: envManager.get('VOYAGEAI_API_KEY'),
+        voyageaiBaseUrl: envManager.get('VOYAGEAI_BASE_URL'),
         geminiApiKey: envManager.get('GEMINI_API_KEY'),
         geminiBaseUrl: envManager.get('GEMINI_BASE_URL'),
+        // OpenRouter configuration
+        openrouterApiKey: envManager.get('OPENROUTER_API_KEY'),
         // Ollama configuration
         ollamaModel: envManager.get('OLLAMA_MODEL'),
         ollamaHost: envManager.get('OLLAMA_HOST'),
-        // Vector database configuration - address can be auto-resolved from token
-        milvusAddress: envManager.get('MILVUS_ADDRESS'), // Optional, can be resolved from token
-        milvusToken: envManager.get('MILVUS_TOKEN')
+        // Vector database configuration
+        vectordbProvider: (envManager.get('VECTORDB_PROVIDER') as 'milvus' | 'qdrant') || 'milvus',
+        milvusAddress: envManager.get('MILVUS_ADDRESS'),
+        milvusToken: envManager.get('MILVUS_TOKEN'),
+        qdrantUrl: envManager.get('QDRANT_URL'),
+        qdrantApiKey: envManager.get('QDRANT_API_KEY')
     };
 
     return config;
@@ -143,7 +159,13 @@ export function logConfigurationSummary(config: ContextMcpConfig): void {
     console.log(`[MCP]   Server: ${config.name} v${config.version}`);
     console.log(`[MCP]   Embedding Provider: ${config.embeddingProvider}`);
     console.log(`[MCP]   Embedding Model: ${config.embeddingModel}`);
-    console.log(`[MCP]   Milvus Address: ${config.milvusAddress || (config.milvusToken ? '[Auto-resolve from token]' : '[Not configured]')}`);
+    console.log(`[MCP]   Vector DB Provider: ${config.vectordbProvider}`);
+    if (config.vectordbProvider === 'qdrant') {
+        console.log(`[MCP]   Qdrant URL: ${config.qdrantUrl || 'http://localhost:6333'}`);
+        console.log(`[MCP]   Qdrant API Key: ${config.qdrantApiKey ? '✅ Configured' : 'Not set (local mode)'}`);
+    } else {
+        console.log(`[MCP]   Milvus Address: ${config.milvusAddress || (config.milvusToken ? '[Auto-resolve from token]' : '[Not configured]')}`);
+    }
 
     // Log provider-specific configuration without exposing sensitive data
     switch (config.embeddingProvider) {
@@ -155,12 +177,18 @@ export function logConfigurationSummary(config: ContextMcpConfig): void {
             break;
         case 'VoyageAI':
             console.log(`[MCP]   VoyageAI API Key: ${config.voyageaiApiKey ? '✅ Configured' : '❌ Missing'}`);
+            if (config.voyageaiBaseUrl) {
+                console.log(`[MCP]   VoyageAI Base URL: ${config.voyageaiBaseUrl}`);
+            }
             break;
         case 'Gemini':
             console.log(`[MCP]   Gemini API Key: ${config.geminiApiKey ? '✅ Configured' : '❌ Missing'}`);
             if (config.geminiBaseUrl) {
                 console.log(`[MCP]   Gemini Base URL: ${config.geminiBaseUrl}`);
             }
+            break;
+        case 'OpenRouter':
+            console.log(`[MCP]   OpenRouter API Key: ${config.openrouterApiKey ? '✅ Configured' : '❌ Missing'}`);
             break;
         case 'Ollama':
             console.log(`[MCP]   Ollama Host: ${config.ollamaHost || 'http://127.0.0.1:11434'}`);
@@ -185,23 +213,28 @@ Environment Variables:
   MCP_SERVER_VERSION      Server version
   
   Embedding Provider Configuration:
-  EMBEDDING_PROVIDER      Embedding provider: OpenAI, VoyageAI, Gemini, Ollama (default: OpenAI)
+  EMBEDDING_PROVIDER      Embedding provider: OpenAI, VoyageAI, Gemini, Ollama, OpenRouter (default: OpenAI)
   EMBEDDING_MODEL         Embedding model name (works for all providers)
   
   Provider-specific API Keys:
   OPENAI_API_KEY          OpenAI API key (required for OpenAI provider)
   OPENAI_BASE_URL         OpenAI API base URL (optional, for custom endpoints)
   VOYAGEAI_API_KEY        VoyageAI API key (required for VoyageAI provider)
+  VOYAGEAI_BASE_URL       VoyageAI API base URL (optional, for custom endpoints)
   GEMINI_API_KEY          Google AI API key (required for Gemini provider)
   GEMINI_BASE_URL         Gemini API base URL (optional, for custom endpoints)
-  
+  OPENROUTER_API_KEY      OpenRouter API key (required for OpenRouter provider)
+
   Ollama Configuration:
   OLLAMA_HOST             Ollama server host (default: http://127.0.0.1:11434)
   OLLAMA_MODEL            Ollama model name (alternative to EMBEDDING_MODEL for Ollama)
   
   Vector Database Configuration:
+  VECTORDB_PROVIDER       Vector database provider: milvus, qdrant (default: milvus)
   MILVUS_ADDRESS          Milvus address (optional, can be auto-resolved from token)
   MILVUS_TOKEN            Milvus token (optional, used for authentication and address resolution)
+  QDRANT_URL              Qdrant server URL (default: http://localhost:6333)
+  QDRANT_API_KEY          Qdrant API key (optional, for Qdrant Cloud)
 
 Examples:
   # Start MCP server with OpenAI (default) and explicit Milvus address
